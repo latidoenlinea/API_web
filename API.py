@@ -61,7 +61,7 @@ def process_video():
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
     if len(faces) == 0:
-        return jsonify({'bpm': 'No se detectaron rostros en la imagen'})
+        return jsonify({'bpm_forehead': None, 'mensaje': 'No se detecta el rostro'})
 
     for (x, y, w, h) in faces:
         # Calcula la región de la frente
@@ -116,7 +116,7 @@ def process_video():
                 'histogram': normalized_hist
             })
 
-    return jsonify({'bpm': 'Estimando...'})
+    return jsonify({'bpm_forehead': 'Estimando...'})
 
 # Nueva ruta para guardar datos en un archivo Excel
 @app.route('/guardar_datos_excel', methods=['POST'])
