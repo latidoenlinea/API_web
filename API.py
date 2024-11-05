@@ -32,7 +32,7 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     y = filtfilt(b, a, data)
     return y
 
-def smooth_bpm(bpm_values, window_size=10):
+def smooth_bpm(bpm_values, window_size=15):
     if len(bpm_values) < window_size:
         return np.mean(bpm_values)
     smoothed_bpm = np.mean(bpm_values[-window_size:])
@@ -50,7 +50,7 @@ def process_video():
     global global_timestamps
     global bpm_history_forehead
 
-    fps = 30  # Cuadros por segundo
+    fps = 15  # Cuadros por segundo
 
     # Lee el archivo de imagen enviado
     file = request.files['frame'].read()
@@ -72,8 +72,9 @@ def process_video():
 
         forehead_roi = cv2.GaussianBlur(forehead_roi, (5, 5), 0)
 
-        # Promedia los valores de la región de la frente
-        mean_forehead = np.mean(forehead_roi[:, :, 1])
+        # Normalización de la intensidad en la región de la frente
+        forehead_roi_normalized = cv2.normalize(forehead_roi, None, 0, 255, cv2.NORM_MINMAX)
+        mean_forehead = np.mean(forehead_roi_normalized[:, :, 1])
 
         # Añadir los valores al buffer
         global_data_buffer.append(mean_forehead)
@@ -81,10 +82,10 @@ def process_video():
 
         print(f"\n Global Data Buffer: {len(global_data_buffer)}")
 
-        if len(global_data_buffer) > fps * 15:
+        if len(global_data_buffer) > fps * 20:
             # Mantén solo los últimos 15 segundos de datos
-            global_data_buffer = global_data_buffer[-fps * 15:]
-            global_timestamps = global_timestamps[-fps * 15:]
+            global_data_buffer = global_data_buffer[-fps * 20:]
+            global_timestamps = global_timestamps[-fps * 20:]
 
             # Filtro pasa banda para la región de la frente
             filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=4)
