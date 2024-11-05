@@ -61,7 +61,7 @@ def process_video():
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
     if len(faces) == 0:
-        return jsonify({'bpm_forehead': None, 'mensaje': 'No se detecta el rostro'})
+        return jsonify({'bpm': 'No se detecta el rostro'})
 
     for (x, y, w, h) in faces:
         # Calcula la región de la frente
@@ -87,9 +87,9 @@ def process_video():
             global_timestamps = global_timestamps[-fps * 15:]
 
             # Filtro pasa banda para la región de la frente
-            # filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=4)
-            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.75, 3, fps, order=4)
-
+            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=4)
+            # filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.75, 3, fps, order=4)
+# 
 
             # FFT para la región de la frente
             fft_forehead = np.fft.rfft(filtered_forehead)
@@ -100,11 +100,11 @@ def process_video():
             peak_freq_forehead = freqs[np.argmax(np.abs(fft_forehead))]
 
             # Cálculo de BPM
-            bpm_forehead = peak_freq_forehead * 60.0
+            bpm = peak_freq_forehead * 60.0
 
             # Agregar BPM al historial de la región de la frente y suavizar
-            bpm_history_forehead.append(bpm_forehead)
-            smoothed_bpm_forehead = smooth_bpm(bpm_history_forehead)
+            bpm_history_forehead.append(bpm)
+            smoothed_bpm = smooth_bpm(bpm_history_forehead)
 
             # Histograma de la imagen
             hist = cv2.calcHist([frame], [0], None, [256], [0, 256]).flatten()
@@ -112,11 +112,11 @@ def process_video():
 
             # Devolver los BPM de la frente y el histograma
             return jsonify({
-                'bpm_forehead': int(smoothed_bpm_forehead) + 8,
+                'bpm': int(smoothed_bpm) + 8,
                 'histogram': normalized_hist
             })
 
-    return jsonify({'bpm_forehead': 'Estimando...'})
+    return jsonify({'bpm': 'Estimando...'})
 
 # Nueva ruta para guardar datos en un archivo Excel
 @app.route('/guardar_datos_excel', methods=['POST'])
