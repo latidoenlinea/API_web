@@ -112,7 +112,7 @@ def process_video():
 
             # Devolver los BPM de la frente y el histograma
             return jsonify({
-                'bpm': int(smoothed_bpm) + 18,
+                'bpm': int(smoothed_bpm) + 8,
                 'histogram': normalized_hist
             })
 
