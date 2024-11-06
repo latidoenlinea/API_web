@@ -5,8 +5,8 @@ import numpy as np
 import time
 import os
 
-CORS(app)
 app = Flask(__name__)
+CORS(app)
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 if face_cascade.empty():
