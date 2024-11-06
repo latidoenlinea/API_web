@@ -1,20 +1,15 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import cv2
 import numpy as np
 from scipy.signal import butter, filtfilt
-from PIL import Image
 from io import BytesIO
-import pandas as pd
-import os
+from PIL import Image
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-CORS(app)
-
-# Variables globales
-global_data_buffer = []
-global_timestamps = []
-bpm_history_forehead = []
+CORS(app)  # Habilita CORS para todas las rutas y orígenes
 
 # Carga el clasificador Haar para la detección de rostros
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -32,107 +27,42 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     y = filtfilt(b, a, data)
     return y
 
-def smooth_bpm(bpm_values, window_size=15):
-    if len(bpm_values) < window_size:
-        return np.mean(bpm_values)
-    smoothed_bpm = np.mean(bpm_values[-window_size:])
-    return smoothed_bpm
-
-def normalize_histogram(hist):
-    min_val = np.min(hist)
-    max_val = np.max(hist)
-    normalized_hist = np.round((hist - min_val) / (max_val - min_val) * 255).astype(int)
-    return normalized_hist.tolist()
-
 @app.route('/process_video', methods=['POST'])
 def process_video():
-    global global_data_buffer
-    global global_timestamps
-    global bpm_history_forehead
-
-    fps = 15  # Cuadros por segundo
-
-    # Lee el archivo de imagen enviado
     file = request.files['frame'].read()
     img = Image.open(BytesIO(file)).convert('RGB')
     frame = np.array(img)
 
+    print(f"DEBUG:root:Tamaño de la imagen recibida: {frame.shape}")
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
     if len(faces) == 0:
-        return jsonify({'bpm': 'No se detecta el rostro'})
+        print("DEBUG:root:No se detectaron rostros en la imagen")
+        return jsonify({'bpm': 'No se pudo calcular BPM, rostro no detectado'})
+
+    data_buffer = []
+    fps = 30  # Define cuadros por segundo
 
     for (x, y, w, h) in faces:
-        # Calcula la región de la frente
         forehead_roi = frame[y:y + h // 7, x + w // 4:x + 3 * w // 4]
 
-        if forehead_roi.size == 0:
-            continue
+        mean_forehead = np.mean(forehead_roi[:, :, 1])
+        data_buffer.append(mean_forehead)
 
-        forehead_roi = cv2.GaussianBlur(forehead_roi, (5, 5), 0)
+        if len(data_buffer) >= fps * 10:
+            data_buffer = data_buffer[-fps * 10:]
+            filtered = butter_bandpass_filter(data_buffer, 0.75, 3.5, fps, order=5)
 
-        # Normalización de la intensidad en la región de la frente
-        forehead_roi_normalized = cv2.normalize(forehead_roi, None, 0, 255, cv2.NORM_MINMAX)
-        mean_forehead = np.mean(forehead_roi_normalized[:, :, 1])
+            fft = np.fft.rfft(filtered)
+            freqs = np.fft.rfftfreq(len(filtered), 1.0 / fps)
+            peak_freq = freqs[np.argmax(np.abs(fft))]
+            bpm = peak_freq * 60.0
 
-        # Añadir los valores al buffer
-        global_data_buffer.append(mean_forehead)
-        global_timestamps.append(len(global_timestamps) / fps)
+            return jsonify({'bpm': int(bpm)})
 
-        print(f"\n Global Data Buffer: {len(global_data_buffer)}")
-
-        if len(global_data_buffer) > fps * 20:
-            # Mantén solo los últimos 15 segundos de datos
-            global_data_buffer = global_data_buffer[-fps * 20:]
-            global_timestamps = global_timestamps[-fps * 20:]
-
-            # Filtro pasa banda para la región de la frente
-            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=4)
-            # filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.75, 3, fps, order=4)
-# 
-
-            # FFT para la región de la frente
-            fft_forehead = np.fft.rfft(filtered_forehead)
-
-            freqs = np.fft.rfftfreq(len(filtered_forehead), 1.0 / fps)
-
-            # Frecuencia máxima para la región de la frente
-            peak_freq_forehead = freqs[np.argmax(np.abs(fft_forehead))]
-
-            # Cálculo de BPM
-            bpm = peak_freq_forehead * 60.0
-
-            # Agregar BPM al historial de la región de la frente y suavizar
-            bpm_history_forehead.append(bpm)
-            smoothed_bpm = smooth_bpm(bpm_history_forehead)
-
-            # Histograma de la imagen
-            hist = cv2.calcHist([frame], [0], None, [256], [0, 256]).flatten()
-            normalized_hist = normalize_histogram(hist)
-
-            # Devolver los BPM de la frente y el histograma
-            return jsonify({
-                'bpm': int(smoothed_bpm) + 8,
-                'histogram': normalized_hist
-            })
-
-    return jsonify({'bpm': 'Estimando...'})
-
-# Nueva ruta para guardar datos en un archivo Excel
-@app.route('/guardar_datos_excel', methods=['POST'])
-def guardar_datos_excel():
-    data = request.json
-
-    # Crear un DataFrame a partir de los datos recibidos
-    df = pd.DataFrame(data)
-
-    # Guardar el archivo Excel en la misma carpeta
-    file_path = 'datos_bpm.xlsx'
-    df.to_excel(file_path, index=False)
-
-    # Enviar el archivo Excel de vuelta al cliente
-    return send_file(file_path, as_attachment=True)
+    return jsonify({'bpm': 'No se pudo calcular BPM, rostro no detectado'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host='0.0.0.0', port=5000)
