@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import cv2
 import numpy as np
 import time
+import os
 
 app = Flask(__name__)
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
