@@ -61,7 +61,7 @@ def process_video():
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
     if len(faces) == 0:
-        return jsonify({'bpm_forehead': None, 'mensaje': 'No se detecta el rostro'})
+        return jsonify({'bpm': 'No se detecta el rostro'})
 
     for (x, y, w, h) in faces:
         # Calcula la región de la frente
@@ -112,7 +112,7 @@ def process_video():
 
             # Devolver los BPM de la frente y el histograma
             return jsonify({
-                'bpm_forehead': int(smoothed_bpm_forehead) + 8,
+                'bpm': int(smoothed_bpm_forehead) + 8,
                 'histogram': normalized_hist
             })
 
