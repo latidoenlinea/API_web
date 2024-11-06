@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
 from scipy.signal import butter, lfilter, find_peaks
 import time
 
 app = Flask(__name__)
+CORS(app)
 
 # Variables globales para almacenar los datos de la señal
 signal_data = []
@@ -73,4 +75,4 @@ def process_frame():
     return jsonify({'bpm': bpm if bpm else "Estimando..."}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
