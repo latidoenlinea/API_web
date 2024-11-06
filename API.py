@@ -87,8 +87,8 @@ def process_video():
             global_timestamps = global_timestamps[-fps * 15:]
 
             # Filtro pasa banda para la región de la frente
-            # filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=4)
-            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.75, 3, fps, order=4)
+            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=5)
+            # filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.75, 3, fps, order=4)
 
 
             # FFT para la región de la frente
@@ -116,7 +116,7 @@ def process_video():
                 'histogram': normalized_hist
             })
 
-    return jsonify({'bpm_forehead': 'Estimando...'})
+    return jsonify({'bpm': 'Estimando...'})
 
 # Nueva ruta para guardar datos en un archivo Excel
 @app.route('/guardar_datos_excel', methods=['POST'])
