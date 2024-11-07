@@ -1,15 +1,15 @@
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 import cv2
 import numpy as np
 from scipy.signal import butter, filtfilt
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
 from PIL import Image
 from io import BytesIO
 import pandas as pd
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 global_data_buffer = []
 global_timestamps = []
@@ -42,43 +42,65 @@ def process_video():
 
     fps = 30
 
-    file = request.files['frame'].read()
-    img = Image.open(BytesIO(file)).convert('RGB')
-    frame = np.array(img)
+    # Verifica que se haya recibido un archivo
+    if 'frame' not in request.files:
+        return jsonify({'error': 'No se recibió el archivo de imagen'}), 400
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    try:
+        # Lee el archivo de imagen
+        file = request.files['frame'].read()
+        img = Image.open(BytesIO(file)).convert('RGB')
+        frame = np.array(img)
 
-    if len(faces) == 0:
-        return jsonify({'bpm': 'No se detecta el rostro'})
+        # Convierte a escala de grises y detecta rostros
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-    for (x, y, w, h) in faces:
-        forehead_roi = frame[y:y + h // 7, x + w // 4:x + 3 * w // 4]
+        if len(faces) == 0:
+            return jsonify({'bpm': 'No se detecta el rostro'})
 
-        if forehead_roi.size == 0:
-            continue
+        for (x, y, w, h) in faces:
+            forehead_roi = frame[y:y + h // 7, x + w // 4:x + 3 * w // 4]
 
-        forehead_roi = cv2.GaussianBlur(forehead_roi, (5, 5), 0)
-        mean_forehead = np.mean(forehead_roi[:, :, 1])
-        global_data_buffer.append(mean_forehead)
-        global_timestamps.append(len(global_timestamps) / fps)
+            if forehead_roi.size == 0:
+                continue
 
-        if len(global_data_buffer) > fps * 15:
-            global_data_buffer = global_data_buffer[-fps * 15:]
-            global_timestamps = global_timestamps[-fps * 15:]
+            forehead_roi = cv2.GaussianBlur(forehead_roi, (5, 5), 0)
+            mean_forehead = np.mean(forehead_roi[:, :, 1])
 
-            filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=5)
-            fft_forehead = np.fft.rfft(filtered_forehead)
-            freqs = np.fft.rfftfreq(len(filtered_forehead), 1.0 / fps)
-            peak_freq_forehead = freqs[np.argmax(np.abs(fft_forehead))]
-            bpm_forehead = peak_freq_forehead * 60.0
+            # Añade los valores al buffer
+            global_data_buffer.append(mean_forehead)
+            global_timestamps.append(len(global_timestamps) / fps)
 
-            bpm_history_forehead.append(bpm_forehead)
-            smoothed_bpm_forehead = smooth_bpm(bpm_history_forehead)
+            # Procesa los datos si hay más de 15 segundos
+            if len(global_data_buffer) > fps * 15:
+                global_data_buffer = global_data_buffer[-fps * 15:]
+                global_timestamps = global_timestamps[-fps * 15:]
 
-            return jsonify({'bpm': int(smoothed_bpm_forehead), 'histogram': normalize_histogram(cv2.calcHist([frame], [0], None, [256], [0, 256]).flatten())})
+                filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=5)
+                fft_forehead = np.fft.rfft(filtered_forehead)
+                freqs = np.fft.rfftfreq(len(filtered_forehead), 1.0 / fps)
+                peak_freq_forehead = freqs[np.argmax(np.abs(fft_forehead))]
+                bpm_forehead = peak_freq_forehead * 60.0
 
-    return jsonify({'bpm': 'Estimando...'})
+                bpm_history_forehead.append(bpm_forehead)
+                smoothed_bpm_forehead = smooth_bpm(bpm_history_forehead)
+
+                return jsonify({
+                    'bpm': int(smoothed_bpm_forehead),
+                    'histogram': normalize_histogram(cv2.calcHist([frame], [0], None, [256], [0, 256]).flatten())
+                })
+
+        return jsonify({'bpm': 'Estimando...'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def normalize_histogram(hist):
+    min_val = np.min(hist)
+    max_val = np.max(hist)
+    normalized_hist = np.round((hist - min_val) / (max_val - min_val) * 255).astype(int)
+    return normalized_hist.tolist()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
