@@ -11,12 +11,15 @@ import os
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# Global variables for storing data
 global_data_buffer = []
 global_timestamps = []
 bpm_history_forehead = []
 
+# Load the Haar Cascade for face detection
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
+# Butterworth bandpass filter design
 def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
     low = lowcut / nyq
@@ -24,15 +27,16 @@ def butter_bandpass(lowcut, highcut, fs, order=5):
     b, a = butter(order, [low, high], btype='band')
     return b, a
 
+# Function to apply Butterworth bandpass filter
 def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = filtfilt(b, a, data)
     return y
 
-def smooth_bpm(bpm_values, window_size=10):
-    if len(bpm_values) < window_size:
-        return np.mean(bpm_values)
-    return np.mean(bpm_values[-window_size:])
+# Smoothing function for BPM values using a weighted average
+def weighted_smooth_bpm(bpm_values, weights):
+    weights = np.array(weights[-len(bpm_values):])
+    return np.average(bpm_values, weights=weights)
 
 @app.route('/process_video', methods=['POST'])
 def process_video():
@@ -42,17 +46,17 @@ def process_video():
 
     fps = 30
 
-    # Verifica que se haya recibido un archivo
+    # Check that an image file was sent
     if 'frame' not in request.files:
         return jsonify({'error': 'No se recibió el archivo de imagen'}), 400
 
     try:
-        # Lee el archivo de imagen
+        # Read the image file
         file = request.files['frame'].read()
         img = Image.open(BytesIO(file)).convert('RGB')
         frame = np.array(img)
 
-        # Convierte a escala de grises y detecta rostros
+        # Convert to grayscale and detect faces
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
@@ -60,34 +64,44 @@ def process_video():
             return jsonify({'bpm': 'No se detecta el rostro'})
 
         for (x, y, w, h) in faces:
+            # Define the forehead ROI
             forehead_roi = frame[y:y + h // 7, x + w // 4:x + 3 * w // 4]
 
             if forehead_roi.size == 0:
                 continue
 
+            # Blur and calculate the mean green channel value in the ROI
             forehead_roi = cv2.GaussianBlur(forehead_roi, (5, 5), 0)
             mean_forehead = np.mean(forehead_roi[:, :, 1])
 
-            # Añade los valores al buffer
+            # Add values to buffer
             global_data_buffer.append(mean_forehead)
             global_timestamps.append(len(global_timestamps) / fps)
 
-            # Procesa los datos si hay más de 15 segundos
+            # Process data if buffer has data for at least 15 seconds
             if len(global_data_buffer) > fps * 15:
+                # Keep only the last 15 seconds of data
                 global_data_buffer = global_data_buffer[-fps * 15:]
                 global_timestamps = global_timestamps[-fps * 15:]
 
-                filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=5)
+                # Bandpass filter the forehead data
+                filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2.5, fps, order=6)
+
+                # Perform FFT on the filtered signal
                 fft_forehead = np.fft.rfft(filtered_forehead)
                 freqs = np.fft.rfftfreq(len(filtered_forehead), 1.0 / fps)
                 peak_freq_forehead = freqs[np.argmax(np.abs(fft_forehead))]
-                bpm_forehead = peak_freq_forehead * 60.0
 
+                # Calculate BPM
+                bpm_forehead = peak_freq_forehead * 60.0
                 bpm_history_forehead.append(bpm_forehead)
-                smoothed_bpm_forehead = smooth_bpm(bpm_history_forehead)
+
+                # Define weights for weighted average (recent values have higher weights)
+                weights = np.linspace(1, 2, len(bpm_history_forehead))
+                smoothed_bpm_forehead = weighted_smooth_bpm(bpm_history_forehead, weights)
 
                 return jsonify({
-                    'bpm': int(smoothed_bpm_forehead),
+                    'bpm': round(smoothed_bpm_forehead, 2),
                     'histogram': normalize_histogram(cv2.calcHist([frame], [0], None, [256], [0, 256]).flatten())
                 })
 
@@ -96,6 +110,7 @@ def process_video():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Normalize histogram for debugging purposes
 def normalize_histogram(hist):
     min_val = np.min(hist)
     max_val = np.max(hist)
@@ -104,3 +119,4 @@ def normalize_histogram(hist):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
