@@ -85,7 +85,7 @@ def process_video():
                 global_timestamps = global_timestamps[-fps * 15:]
 
                 # Bandpass filter the forehead data
-                filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2.5, fps, order=6)
+                filtered_forehead = butter_bandpass_filter(global_data_buffer, 0.8333, 2, fps, order=6)
 
                 # Perform FFT on the filtered signal
                 fft_forehead = np.fft.rfft(filtered_forehead)
