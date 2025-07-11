@@ -275,7 +275,7 @@ def start_cleanup_timer():
     cleanup_timer = threading.Timer(300.0, start_cleanup_timer)  # Every 5 minutes
     cleanup_timer.daemon = True
     cleanup_timer.start()
-if name == 'main':
+if name == '__main__':
     start_cleanup_timer()
     atexit.register(lambda: cleanup_timer and cleanup_timer.cancel())
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
